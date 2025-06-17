@@ -3,6 +3,7 @@ import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { FanAccessory } from './accessories/FanAccessory';
 import { HeaterAccessory } from './accessories/HeaterAccessory';
+import { AirConditionerAccessory } from './accessories/AirConditionerAccessory';
 import DreoAPI from './DreoAPI';
 
 /**
@@ -180,11 +181,11 @@ export class DreoPlatform implements DynamicPlatformPlugin {
           accessory.category = this.api.hap.Categories.AIR_HEATER;
           new HeaterAccessory(this, accessory, state);
           break;
+
         case 'DR-HAC':
           // Air Conditioner
-          // new CoolerAccessory(this, accessory, state);
-          this.log.info('Air Conditioner not yet supported');
-          modelPrefix = undefined;
+          accessory.category = this.api.hap.Categories.AIR_CONDITIONER;
+          new AirConditionerAccessory(this, accessory, device);
           break;
 
         case 'DR-HHM':
