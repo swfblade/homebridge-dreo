@@ -1,5 +1,3 @@
-// src/accessories/AirConditionerAccessory.ts
-
 import {
   Service,
   PlatformAccessory,
@@ -9,16 +7,19 @@ import {
 } from 'homebridge';
 
 import { DreoPlatform } from '../platform';
+import { BaseAccessory } from './BaseAccessory';
 
-export class AirConditionerAccessory {
+export class AirConditionerAccessory extends BaseAccessory {
   private service: Service;
   private readonly Characteristic = this.platform.Characteristic;
 
   constructor(
-    private readonly platform: DreoPlatform,
-    private readonly accessory: PlatformAccessory,
-    private readonly device: any
+    protected readonly platform: DreoPlatform,
+    protected readonly accessory: PlatformAccessory,
+    protected device: any
   ) {
+    super(platform, accessory, device);
+
     const name = this.device.deviceName || 'Dreo Air Conditioner';
 
     this.service = this.accessory.getService(this.platform.Service.HeaterCooler)
@@ -27,136 +28,100 @@ export class AirConditionerAccessory {
     this.service.setCharacteristic(this.Characteristic.Name, name);
 
     this.service.getCharacteristic(this.Characteristic.Active)
-      .on('set', this.setActive.bind(this))
-      .on('get', this.getActive.bind(this));
+      .onSet(this.setActive.bind(this))
+      .onGet(this.getActive.bind(this));
 
     this.service.getCharacteristic(this.Characteristic.CurrentTemperature)
-      .on('get', this.getCurrentTemperature.bind(this));
+      .onGet(this.getCurrentTemperature.bind(this));
 
     this.service.getCharacteristic(this.Characteristic.TargetTemperature)
-      .on('set', this.setTargetTemperature.bind(this))
-      .on('get', this.getTargetTemperature.bind(this));
+      .onSet(this.setTargetTemperature.bind(this))
+      .onGet(this.getTargetTemperature.bind(this));
 
     this.service.getCharacteristic(this.Characteristic.CurrentHeaterCoolerState)
-      .on('get', this.getCurrentState.bind(this));
+      .onGet(this.getCurrentState.bind(this));
 
     this.service.getCharacteristic(this.Characteristic.TargetHeaterCoolerState)
-      .on('set', this.setTargetState.bind(this))
-      .on('get', this.getTargetState.bind(this));
+      .onSet(this.setTargetState.bind(this))
+      .onGet(this.getTargetState.bind(this));
 
     this.service.getCharacteristic(this.Characteristic.SwingMode)
-      .on('set', this.setSwingMode.bind(this))
-      .on('get', this.getSwingMode.bind(this));
+      .onSet(this.setSwingMode.bind(this))
+      .onGet(this.getSwingMode.bind(this));
 
     this.service.getCharacteristic(this.Characteristic.RotationSpeed)
-      .on('set', this.setFanSpeed.bind(this))
-      .on('get', this.getFanSpeed.bind(this));
+      .onSet(this.setFanSpeed.bind(this))
+      .onGet(this.getFanSpeed.bind(this));
 
-    this.updateStatus();
+    setTimeout(() => this.updateStatus(), 5000);
     setInterval(this.updateStatus.bind(this), 30000);
   }
 
-  async setActive(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    await this.platform.dreo.sendCommand(this.device, 'poweron', { state: value === 1 });
-    callback(null);
+  async setActive(value: CharacteristicValue) {
+    await this.platform.dreoApi.sendCommand(this.device.device_sn, 'set', 'poweron', value === 1);
   }
 
-  async getActive(callback: CharacteristicGetCallback) {
-    const state = await this.platform.dreo.getState(this.device);
-    callback(null, state.poweron.state ? 1 : 0);
+  async getActive(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device);
+    return state.poweron.state ? 1 : 0;
   }
 
-  async getCurrentTemperature(callback: CharacteristicGetCallback) {
-    const state = await this.platform.dreo.getState(this.device);
+  async getCurrentTemperature(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device);
     const f = state.temperature.state;
     const c = ((f - 32) * 5) / 9;
-    callback(null, Math.round(c * 10) / 10);
+    return Math.round(c * 10) / 10;
   }
 
-  async getTargetTemperature(callback: CharacteristicGetCallback) {
-    const state = await this.platform.dreo.getState(this.device);
+  async getTargetTemperature(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device);
     const f = state.templevel.state;
     const c = ((f - 32) * 5) / 9;
-    callback(null, Math.round(c * 10) / 10);
+    return Math.round(c * 10) / 10;
   }
 
-  async setTargetTemperature(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+  async setTargetTemperature(value: CharacteristicValue) {
     const f = Math.round((value as number) * 9 / 5 + 32);
-    await this.platform.dreo.sendCommand(this.device, 'templevel', { state: f });
-    callback(null);
+    await this.platform.dreoApi.sendCommand(this.device.device_sn, 'set', 'templevel', f);
   }
 
-  async getCurrentState(callback: CharacteristicGetCallback) {
-    const state = await this.platform.dreo.getState(this.device);
-    const mode = state.mode.state;
-    const power = state.poweron.state;
-    let result = this.Characteristic.CurrentHeaterCoolerState.INACTIVE;
-
-    if (!power) result = this.Characteristic.CurrentHeaterCoolerState.INACTIVE;
-    else if (mode === 1) result = this.Characteristic.CurrentHeaterCoolerState.COOLING;
-    else if (mode === 3) result = this.Characteristic.CurrentHeaterCoolerState.IDLE;
-
-    callback(null, result);
+  async getCurrentState(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device);
+    return state.poweron.state ? this.Characteristic.CurrentHeaterCoolerState.COOLING
+                               : this.Characteristic.CurrentHeaterCoolerState.INACTIVE;
   }
 
-  async getTargetState(callback: CharacteristicGetCallback) {
-    const state = await this.platform.dreo.getState(this.device);
-    const mode = state.mode.state;
-    let value = this.Characteristic.TargetHeaterCoolerState.COOL;
-
-    if (mode === 3) value = this.Characteristic.TargetHeaterCoolerState.FAN_ONLY;
-    else if (mode === 5) value = this.Characteristic.TargetHeaterCoolerState.HEAT;
-
-    callback(null, value);
+  async getTargetState(): Promise<CharacteristicValue> {
+    return this.Characteristic.TargetHeaterCoolerState.COOL;
   }
 
-  async setTargetState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    let mode = 1; // Default to cool
-    if (value === this.Characteristic.TargetHeaterCoolerState.FAN_ONLY) mode = 3;
-    else if (value === this.Characteristic.TargetHeaterCoolerState.HEAT) mode = 5; // eco workaround
-
-    await this.platform.dreo.sendCommand(this.device, 'mode', { state: mode });
-    callback(null);
+  async setTargetState(value: CharacteristicValue) {
+    // Currently hardcoded to COOL mode
   }
 
-  async setSwingMode(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    await this.platform.dreo.sendCommand(this.device, 'oscmode', { state: value });
-    callback(null);
+  async setSwingMode(value: CharacteristicValue) {
+    await this.platform.dreoApi.sendCommand(this.device.device_sn, 'set', 'swing', value === 1);
   }
 
-  async getSwingMode(callback: CharacteristicGetCallback) {
-    const state = await this.platform.dreo.getState(this.device);
-    callback(null, state.oscmode.state);
+  async getSwingMode(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device);
+    return state.swing.state ? 1 : 0;
   }
 
-  async setFanSpeed(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    // Map HomeKit % to windlevel 1–4
-    let windlevel = 1;
-    if (value > 75) windlevel = 4;
-    else if (value > 50) windlevel = 3;
-    else if (value > 25) windlevel = 2;
-    await this.platform.dreo.sendCommand(this.device, 'windlevel', { state: windlevel });
-    callback(null);
+  async setFanSpeed(value: CharacteristicValue) {
+    await this.platform.dreoApi.sendCommand(this.device.device_sn, 'set', 'fanspeed', value);
   }
 
-  async getFanSpeed(callback: CharacteristicGetCallback) {
-    const state = await this.platform.dreo.getState(this.device);
-    const windlevel = state.windlevel.state;
-    const percent = { 1: 10, 2: 35, 3: 65, 4: 90 }[windlevel] || 50;
-    callback(null, percent);
+  async getFanSpeed(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device);
+    return state.fanspeed?.state || 0;
   }
 
   async updateStatus() {
-    const state = await this.platform.dreo.getState(this.device);
-    const power = state.poweron.state;
-    const temp = ((state.temperature.state - 32) * 5) / 9;
-    const target = ((state.templevel.state - 32) * 5) / 9;
-    const windlevel = state.windlevel.state;
-    const percent = { 1: 10, 2: 35, 3: 65, 4: 90 }[windlevel] || 50;
-
-    this.service.updateCharacteristic(this.Characteristic.Active, power ? 1 : 0);
-    this.service.updateCharacteristic(this.Characteristic.CurrentTemperature, Math.round(temp * 10) / 10);
-    this.service.updateCharacteristic(this.Characteristic.TargetTemperature, Math.round(target * 10) / 10);
-    this.service.updateCharacteristic(this.Characteristic.RotationSpeed, percent);
+    const state = await this.platform.webHelper.getState(this.device);
+    this.service.updateCharacteristic(this.Characteristic.Active, state.poweron.state ? 1 : 0);
+    const f = state.temperature.state;
+    const c = ((f - 32) * 5) / 9;
+    this.service.updateCharacteristic(this.Characteristic.CurrentTemperature, Math.round(c * 10) / 10);
   }
 }
