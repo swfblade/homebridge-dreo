@@ -43,6 +43,16 @@ export class AirConditionerAccessory extends BaseAccessory {
         minStep: 0.1,
       });
 
+    this.service.getCharacteristic(this.platform.Characteristic.RotationSpeed)
+      .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
+      .onGet(this.getRotationSpeed.bind(this))
+      .onSet(this.setRotationSpeed.bind(this));
+
+
+/**    this.service.getCharacteristic(this.platform.Characteristic.SwingMode)
+      .onGet(this.getSwingMode.bind(this))
+      .onSet(this.setSwingMode.bind(this));
+*/
   }
 
   getActive(): boolean {
@@ -68,6 +78,8 @@ export class AirConditionerAccessory extends BaseAccessory {
 
   private async getCurrentHeaterCoolerState(): Promise<CharacteristicValue> {
     const state = await this.platform.webHelper.getState(this.device.sn);
+    this.platform.log.info('[AirCon] FULL state snapshot: ' + JSON.stringify(state));
+
     const mode = state.mode?.state;
     const power = state.poweron?.state;
 
@@ -166,5 +178,52 @@ export class AirConditionerAccessory extends BaseAccessory {
     this.platform.log.info(`[AirCon] Reporting current temperature: ${temperature}°C`);
     return temperature;
   }
+
+  private async getRotationSpeed(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device.sn);
+    const speed = state.windlevel?.state ?? 4;
+
+    let percentage = 100; // default to Auto
+    switch (speed) {
+      case 1: percentage = 10; break;
+      case 2: percentage = 35; break;
+      case 3: percentage = 60; break;
+      case 4: percentage = 85; break;
+    }
+
+    this.platform.log.info(`[AirCon] Current fan speed: windlevel ${speed}, reporting ${percentage}%`);
+    return percentage;
+  }
+
+  private async setRotationSpeed(value: CharacteristicValue): Promise<void> {
+    const percent = Number(value);
+    let windlevel = 4; // Auto by default
+
+    if (percent < 25) windlevel = 1;
+    else if (percent < 50) windlevel = 2;
+    else if (percent < 75) windlevel = 3;
+
+    this.platform.log.info(`[AirCon] Set fan speed: ${percent}% → windlevel ${windlevel}`);
+    await this.platform.webHelper.control(this.device.sn, { windlevel });
+  }
+
+/**  private async getSwingMode(): Promise<CharacteristicValue> {
+    const state = await this.platform.webHelper.getState(this.device.sn);
+    const osc = state.oscmode?.state;
+
+    const result = osc === 1
+      ? this.platform.Characteristic.SwingMode.SWING_ENABLED
+      : this.platform.Characteristic.SwingMode.SWING_DISABLED;
+
+    this.platform.log.info(`[AirCon] Current Swing Mode: ${osc} → ${result}`);
+    return result;
+  }
+
+  private async setSwingMode(value: CharacteristicValue): Promise<void> {
+    const swing = value === this.platform.Characteristic.SwingMode.SWING_ENABLED ? 2 : 0;
+
+    this.platform.log.info(`[AirCon] Set Swing Mode to ${swing}`);
+    await this.platform.webHelper.control(this.device.sn, { oscmode: { state: swing } });
+  }*/
 
 }
